@@ -1,0 +1,4 @@
+- `Tutorial/0.Intro/1.1.整体框架.md`是我的项目介绍；
+- `Tutorial/0.Intro/1.2.文件结构.md`是我的文件结构
+
+现在帮我写li_assistant/core/state.py，要求每行有注释

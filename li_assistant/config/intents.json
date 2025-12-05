@@ -1,0 +1,1137 @@
+{
+  "version": "1.0",
+  "description": "In-car assistant intent map for multi-agent & LangGraph routing",
+  "domains": {
+    "manual": "用户手册 / 车辆功能说明 / 告警含义",
+    "vehicle": "车况查询 / 车辆控制",
+    "navigation": "导航与路线规划",
+    "trip": "跨步骤行程规划 / 组合任务",
+    "infotainment": "媒体、音乐、电台等娱乐控制",
+    "chitchat": "闲聊与通用问答",
+    "system": "关于助手与系统本身的设置",
+    "safety": "安全相关的特殊处理",
+    "generic": "兜底 / 无法识别 / 二次澄清"
+  },
+  "intents": {
+    "manual_feature_usage": {
+      "domain": "manual",
+      "action_type": "query",
+      "description": "询问某个功能怎么用、怎么操作",
+      "route": {
+        "subgraph": "manual_rag_graph"
+      },
+      "slots": {
+        "feature_name": {
+          "type": "string",
+          "description": "功能名称，例如 自适应巡航、自动泊车、车道保持 等"
+        },
+        "context_part": {
+          "type": "string",
+          "description": "车内位置或部件，例如 中控屏、方向盘左侧按键"
+        }
+      },
+      "examples": [
+        "怎么用自适应巡航？",
+        "自动泊车怎么开启？",
+        "方向盘上这个按键是干嘛的？"
+      ],
+      "safety": {
+        "needs_safety_review": true,
+        "tags": ["driving_sensitive"]
+      }
+    },
+    "manual_warning_indicator": {
+      "domain": "manual",
+      "action_type": "query",
+      "description": "询问仪表盘告警灯或提示灯含义",
+      "route": {
+        "subgraph": "manual_rag_graph"
+      },
+      "slots": {
+        "indicator_color": {
+          "type": "string",
+          "description": "指示灯颜色，例如 红色、黄色、橙色"
+        },
+        "indicator_icon": {
+          "type": "string",
+          "description": "图标或文字描述，例如 发动机图标、三角形叹号"
+        },
+        "indicator_code": {
+          "type": "string",
+          "description": "若用户有读到故障码或代码，如 P0420"
+        }
+      },
+      "examples": [
+        "这个黄色发动机灯是什么意思？",
+        "仪表盘上红色感叹号是啥？",
+        "ABS灯亮了代表什么？"
+      ],
+      "safety": {
+        "needs_safety_review": true,
+        "tags": ["safety_critical"]
+      }
+    },
+    "manual_troubleshooting": {
+      "domain": "manual",
+      "action_type": "query",
+      "description": "故障排查与简单自助解决方案",
+      "route": {
+        "subgraph": "manual_rag_graph"
+      },
+      "slots": {
+        "symptom": {
+          "type": "string",
+          "description": "症状描述，例如 车窗关不上、空调不制冷"
+        },
+        "component": {
+          "type": "string",
+          "description": "相关系统/部件，例如 车窗、空调、多媒体系统"
+        }
+      },
+      "examples": [
+        "车窗关不上了怎么办？",
+        "空调不太凉怎么处理？",
+        "蓝牙总是连不上手机怎么办？"
+      ],
+      "safety": {
+        "needs_safety_review": true,
+        "tags": ["safety_critical", "driving_sensitive"]
+      }
+    },
+    "manual_spec_parameter": {
+      "domain": "manual",
+      "action_type": "query",
+      "description": "参数/规格查询，例如胎压、油箱容量等",
+      "route": {
+        "subgraph": "manual_rag_graph"
+      },
+      "slots": {
+        "spec_type": {
+          "type": "string",
+          "description": "参数类型，例如 胎压、油量、扭矩、油箱容量"
+        },
+        "position": {
+          "type": "string",
+          "description": "如 前轮、后轮、左前 等"
+        }
+      },
+      "examples": [
+        "这辆车胎压标准是多少？",
+        "油箱能装多少升？",
+        "推荐的机油型号是啥？"
+      ],
+      "safety": {
+        "needs_safety_review": false,
+        "tags": []
+      }
+    },
+    "manual_system_explanation": {
+      "domain": "manual",
+      "action_type": "query",
+      "description": "解释某个系统的含义和工作原理",
+      "route": {
+        "subgraph": "manual_rag_graph"
+      },
+      "slots": {
+        "system_name": {
+          "type": "string",
+          "description": "系统名称，例如 ESP、TCS、LKA、ACC"
+        }
+      },
+      "examples": [
+        "ESP 是干嘛的？",
+        "车道保持系统怎么工作？",
+        "自动启停有什么用？"
+      ],
+      "safety": {
+        "needs_safety_review": true,
+        "tags": ["driving_sensitive"]
+      }
+    },
+
+    "vehicle_status_query": {
+      "domain": "vehicle",
+      "action_type": "query",
+      "description": "泛化的车况状态查询",
+      "route": {
+        "subgraph": "vehicle_control_graph"
+      },
+      "slots": {
+        "status_type": {
+          "type": "string",
+          "description": "查询类型：电量、电量+续航、油量、车门、车窗、胎压、灯光等"
+        }
+      },
+      "examples": [
+        "现在还剩多少电？",
+        "还能开多少公里？",
+        "车门都关好了吗？"
+      ],
+      "safety": {
+        "needs_safety_review": false,
+        "tags": []
+      }
+    },
+    "vehicle_status_query_tire": {
+      "domain": "vehicle",
+      "action_type": "query",
+      "description": "胎压/轮胎相关状态查询",
+      "route": {
+        "subgraph": "vehicle_control_graph"
+      },
+      "slots": {
+        "position": {
+          "type": "string",
+          "description": "轮胎位置，例如 前左、前右、后左、后右、全部"
+        }
+      },
+      "examples": [
+        "胎压正常吗？",
+        "前轮胎压多少？"
+      ],
+      "safety": {
+        "needs_safety_review": true,
+        "tags": ["safety_critical"]
+      }
+    },
+    "vehicle_status_query_battery": {
+      "domain": "vehicle",
+      "action_type": "query",
+      "description": "电量/续航相关查询（新能源）",
+      "route": {
+        "subgraph": "vehicle_control_graph"
+      },
+      "slots": {
+        "need_range_estimation": {
+          "type": "boolean",
+          "description": "是否需要估算到某目的地是否足够"
+        },
+        "destination": {
+          "type": "string",
+          "description": "若需估算，则包含目的地名称或坐标"
+        }
+      },
+      "examples": [
+        "电量还有多少？",
+        "现在的电够不够开到公司？"
+      ],
+      "safety": {
+        "needs_safety_review": true,
+        "tags": ["safety_critical"]
+      }
+    },
+    "vehicle_status_query_fuel": {
+      "domain": "vehicle",
+      "action_type": "query",
+      "description": "燃油/油量相关查询",
+      "route": {
+        "subgraph": "vehicle_control_graph"
+      },
+      "slots": {
+        "need_range_estimation": {
+          "type": "boolean",
+          "description": "是否需要估算续航能力"
+        }
+      },
+      "examples": [
+        "油箱还有多少油？",
+        "还可以跑多远？"
+      ],
+      "safety": {
+        "needs_safety_review": true,
+        "tags": ["safety_critical"]
+      }
+    },
+
+    "vehicle_control_ac": {
+      "domain": "vehicle",
+      "action_type": "control",
+      "description": "空调控制：开关、温度、风量、模式等",
+      "route": {
+        "subgraph": "vehicle_control_graph"
+      },
+      "slots": {
+        "power": {
+          "type": "string",
+          "description": "on/off/toggle"
+        },
+        "temperature": {
+          "type": "number",
+          "description": "目标温度（摄氏度）"
+        },
+        "temperature_delta": {
+          "type": "number",
+          "description": "温度相对调整，例如 -2 +3"
+        },
+        "fan_level": {
+          "type": "integer",
+          "description": "风量档位"
+        },
+        "mode": {
+          "type": "string",
+          "description": "制冷、制热、自动、除雾等"
+        }
+      },
+      "examples": [
+        "打开空调。",
+        "把空调调到 22 度。",
+        "空调冷一点。"
+      ],
+      "safety": {
+        "needs_safety_review": false,
+        "tags": []
+      }
+    },
+    "vehicle_control_window": {
+      "domain": "vehicle",
+      "action_type": "control",
+      "description": "车窗升降控制",
+      "route": {
+        "subgraph": "vehicle_control_graph"
+      },
+      "slots": {
+        "position": {
+          "type": "string",
+          "description": "车窗位置：驾驶位、副驾、左后、右后、全部"
+        },
+        "direction": {
+          "type": "string",
+          "description": "up/down/stop"
+        },
+        "percent": {
+          "type": "number",
+          "description": "开合百分比（0-100）"
+        }
+      },
+      "examples": [
+        "把驾驶位车窗降一点。",
+        "全部车窗升起来。"
+      ],
+      "safety": {
+        "needs_safety_review": true,
+        "tags": ["driving_sensitive"]
+      }
+    },
+    "vehicle_control_light": {
+      "domain": "vehicle",
+      "action_type": "control",
+      "description": "车灯控制（近光、远光、日行灯、雾灯等）",
+      "route": {
+        "subgraph": "vehicle_control_graph"
+      },
+      "slots": {
+        "light_type": {
+          "type": "string",
+          "description": "近光灯、远光灯、雾灯、示宽灯、双闪等"
+        },
+        "power": {
+          "type": "string",
+          "description": "on/off/toggle"
+        }
+      },
+      "examples": [
+        "打开近光灯。",
+        "把双闪关掉。"
+      ],
+      "safety": {
+        "needs_safety_review": true,
+        "tags": ["safety_critical"]
+      }
+    },
+    "vehicle_control_seat": {
+      "domain": "vehicle",
+      "action_type": "control",
+      "description": "座椅位置/加热/通风等控制",
+      "route": {
+        "subgraph": "vehicle_control_graph"
+      },
+      "slots": {
+        "seat_position": {
+          "type": "string",
+          "description": "主驾、副驾、后排等"
+        },
+        "feature": {
+          "type": "string",
+          "description": "加热、通风、按摩、记忆位置等"
+        },
+        "level": {
+          "type": "integer",
+          "description": "强度级别"
+        }
+      },
+      "examples": [
+        "帮我打开主驾座椅加热。",
+        "座椅往后调一点。"
+      ],
+      "safety": {
+        "needs_safety_review": true,
+        "tags": ["driving_sensitive"]
+      }
+    },
+    "vehicle_control_sunroof": {
+      "domain": "vehicle",
+      "action_type": "control",
+      "description": "天窗开合/通风控制",
+      "route": {
+        "subgraph": "vehicle_control_graph"
+      },
+      "slots": {
+        "mode": {
+          "type": "string",
+          "description": "open/close/vent/tilt"
+        },
+        "percent": {
+          "type": "number",
+          "description": "开合百分比"
+        }
+      },
+      "examples": [
+        "打开天窗。",
+        "天窗开一半。"
+      ],
+      "safety": {
+        "needs_safety_review": true,
+        "tags": ["driving_sensitive"]
+      }
+    },
+    "vehicle_control_door_lock": {
+      "domain": "vehicle",
+      "action_type": "control",
+      "description": "车门上锁/解锁、儿童锁等",
+      "route": {
+        "subgraph": "vehicle_control_graph"
+      },
+      "slots": {
+        "lock_state": {
+          "type": "string",
+          "description": "lock/unlock"
+        },
+        "scope": {
+          "type": "string",
+          "description": "全部、驾驶位、后排等"
+        },
+        "child_lock": {
+          "type": "string",
+          "description": "on/off 或 null"
+        }
+      },
+      "examples": [
+        "帮我把门锁上。",
+        "关闭儿童锁。"
+      ],
+      "safety": {
+        "needs_safety_review": true,
+        "tags": ["safety_critical"]
+      }
+    },
+    "vehicle_control_drive_mode": {
+      "domain": "vehicle",
+      "action_type": "control",
+      "description": "驾驶模式切换（经济、普通、运动、雪地等）",
+      "route": {
+        "subgraph": "vehicle_control_graph"
+      },
+      "slots": {
+        "mode": {
+          "type": "string",
+          "description": "eco/normal/sport/snow/custom 等"
+        }
+      },
+      "examples": [
+        "切到运动模式。",
+        "用经济模式开。"
+      ],
+      "safety": {
+        "needs_safety_review": true,
+        "tags": ["driving_sensitive"]
+      }
+    },
+    "vehicle_control_wiper": {
+      "domain": "vehicle",
+      "action_type": "control",
+      "description": "雨刮控制",
+      "route": {
+        "subgraph": "vehicle_control_graph"
+      },
+      "slots": {
+        "mode": {
+          "type": "string",
+          "description": "off/low/high/auto/single_wipe"
+        }
+      },
+      "examples": [
+        "打开雨刮。",
+        "雨刮速度快一点。"
+      ],
+      "safety": {
+        "needs_safety_review": true,
+        "tags": ["driving_sensitive"]
+      }
+    },
+
+    "navigation_set_destination": {
+      "domain": "navigation",
+      "action_type": "control",
+      "description": "设置导航目的地并开始导航",
+      "route": {
+        "subgraph": "navigation_graph"
+      },
+      "slots": {
+        "destination": {
+          "type": "string",
+          "description": "目的地名称，如地标/地址/联系人地址"
+        },
+        "poi_type": {
+          "type": "string",
+          "description": "若是类别，如 充电站、加油站、停车场"
+        },
+        "use_home_or_work": {
+          "type": "string",
+          "description": "home/work 或 null"
+        }
+      },
+      "examples": [
+        "导航到杭州。",
+        "带我去公司。",
+        "带我去最近的充电站。"
+      ],
+      "safety": {
+        "needs_safety_review": false,
+        "tags": []
+      }
+    },
+    "navigation_set_home": {
+      "domain": "navigation",
+      "action_type": "control",
+      "description": "设置/更新家地址",
+      "route": {
+        "subgraph": "navigation_graph"
+      },
+      "slots": {
+        "address": {
+          "type": "string",
+          "description": "家庭住址"
+        }
+      },
+      "examples": [
+        "把我现在的位置设为家。",
+        "家地址改成 XX 小区。"
+      ],
+      "safety": {
+        "needs_safety_review": true,
+        "tags": ["privacy_sensitive"]
+      }
+    },
+    "navigation_set_company": {
+      "domain": "navigation",
+      "action_type": "control",
+      "description": "设置/更新公司地址",
+      "route": {
+        "subgraph": "navigation_graph"
+      },
+      "slots": {
+        "address": {
+          "type": "string",
+          "description": "公司地址"
+        }
+      },
+      "examples": [
+        "把公司地址改成 XX 大厦。",
+        "把现在位置设成公司。"
+      ],
+      "safety": {
+        "needs_safety_review": true,
+        "tags": ["privacy_sensitive"]
+      }
+    },
+    "navigation_add_stop": {
+      "domain": "navigation",
+      "action_type": "control",
+      "description": "在当前路线中增加中途停靠点",
+      "route": {
+        "subgraph": "navigation_graph"
+      },
+      "slots": {
+        "poi": {
+          "type": "string",
+          "description": "中途地点名称或类别"
+        }
+      },
+      "examples": [
+        "顺路找个便利店停一下。",
+        "在去公司的路上加一个加油站。"
+      ],
+      "safety": {
+        "needs_safety_review": false,
+        "tags": []
+      }
+    },
+    "navigation_cancel": {
+      "domain": "navigation",
+      "action_type": "control",
+      "description": "取消当前导航",
+      "route": {
+        "subgraph": "navigation_graph"
+      },
+      "slots": {},
+      "examples": [
+        "取消导航。",
+        "不用导航了。"
+      ],
+      "safety": {
+        "needs_safety_review": false,
+        "tags": []
+      }
+    },
+    "navigation_poi_search": {
+      "domain": "navigation",
+      "action_type": "query",
+      "description": "搜索附近 POI，如餐厅、加油站等",
+      "route": {
+        "subgraph": "navigation_graph"
+      },
+      "slots": {
+        "poi_type": {
+          "type": "string",
+          "description": "POI 类别，例如 火锅、咖啡、加油站、充电站"
+        },
+        "range_km": {
+          "type": "number",
+          "description": "搜索范围，单位公里"
+        }
+      },
+      "examples": [
+        "附近有什么好吃的火锅？",
+        "帮我找附近的充电站。"
+      ],
+      "safety": {
+        "needs_safety_review": false,
+        "tags": []
+      }
+    },
+    "navigation_route_preference": {
+      "domain": "navigation",
+      "action_type": "control",
+      "description": "设置当前导航的路线偏好",
+      "route": {
+        "subgraph": "navigation_graph"
+      },
+      "slots": {
+        "avoid_highway": {
+          "type": "boolean",
+          "description": "是否避开高速"
+        },
+        "avoid_toll": {
+          "type": "boolean",
+          "description": "是否避开收费路段"
+        },
+        "prefer_scenic": {
+          "type": "boolean",
+          "description": "是否偏好景色好路线"
+        }
+      },
+      "examples": [
+        "不要走高速。",
+        "选一条不堵车的路。",
+        "风景好一点的路线。"
+      ],
+      "safety": {
+        "needs_safety_review": false,
+        "tags": []
+      }
+    },
+    "navigation_eta_query": {
+      "domain": "navigation",
+      "action_type": "query",
+      "description": "询问预计到达时间或剩余路程",
+      "route": {
+        "subgraph": "navigation_graph"
+      },
+      "slots": {},
+      "examples": [
+        "还要多久到？",
+        "还有多远？"
+      ],
+      "safety": {
+        "needs_safety_review": false,
+        "tags": []
+      }
+    },
+
+    "trip_pre_drive_check": {
+      "domain": "trip",
+      "action_type": "plan",
+      "description": "出发前综合检查：电量/油量/胎压/保养状态等",
+      "route": {
+        "subgraph": "task_planner_graph"
+      },
+      "slots": {
+        "distance_type": {
+          "type": "string",
+          "description": "短途/长途/自驾游等"
+        }
+      },
+      "examples": [
+        "我准备出长途，帮我检查一下车况。",
+        "出门前帮我看看车有没有问题。"
+      ],
+      "safety": {
+        "needs_safety_review": true,
+        "tags": ["safety_critical"]
+      }
+    },
+    "trip_long_distance_plan": {
+      "domain": "trip",
+      "action_type": "plan",
+      "description": "长途/自驾游路线与注意事项规划",
+      "route": {
+        "subgraph": "task_planner_graph"
+      },
+      "slots": {
+        "destination": {
+          "type": "string",
+          "description": "目的地城市或景点"
+        },
+        "need_hotel": {
+          "type": "boolean",
+          "description": "是否需要住宿建议"
+        }
+      },
+      "examples": [
+        "帮我规划去杭州自驾游路线。",
+        "去云南自驾要注意什么？"
+      ],
+      "safety": {
+        "needs_safety_review": true,
+        "tags": ["driving_sensitive"]
+      }
+    },
+    "trip_charging_plan": {
+      "domain": "trip",
+      "action_type": "plan",
+      "description": "基于电量/续航的充电规划",
+      "route": {
+        "subgraph": "task_planner_graph"
+      },
+      "slots": {
+        "destination": {
+          "type": "string",
+          "description": "终点城市或地点"
+        }
+      },
+      "examples": [
+        "从上海到南京帮我规划一下充电站。",
+        "去杭州路上哪里适合充电？"
+      ],
+      "safety": {
+        "needs_safety_review": true,
+        "tags": ["safety_critical"]
+      }
+    },
+    "trip_multi_stop_plan": {
+      "domain": "trip",
+      "action_type": "plan",
+      "description": "多目的地行程规划",
+      "route": {
+        "subgraph": "task_planner_graph"
+      },
+      "slots": {
+        "stops": {
+          "type": "array",
+          "description": "按顺序的多个目的地列表"
+        }
+      },
+      "examples": [
+        "先去公司，再去商场，然后回家，帮我规划一下。",
+        "帮我安排一条路：先去加油站，再去超市。"
+      ],
+      "safety": {
+        "needs_safety_review": true,
+        "tags": ["driving_sensitive"]
+      }
+    },
+
+    "media_play_music": {
+      "domain": "infotainment",
+      "action_type": "control",
+      "description": "播放音乐（按歌名、歌手、风格等）",
+      "route": {
+        "subgraph": "media_graph"
+      },
+      "slots": {
+        "song_name": {
+          "type": "string",
+          "description": "歌曲名称"
+        },
+        "artist": {
+          "type": "string",
+          "description": "歌手/乐队"
+        },
+        "genre": {
+          "type": "string",
+          "description": "风格，例如 轻音乐、摇滚、古典"
+        }
+      },
+      "examples": [
+        "放点轻音乐。",
+        "放周杰伦的歌。",
+        "来点节奏感强一点的音乐。"
+      ],
+      "safety": {
+        "needs_safety_review": false,
+        "tags": []
+      }
+    },
+    "media_play_radio": {
+      "domain": "infotainment",
+      "action_type": "control",
+      "description": "打开/切换电台或 FM 频段",
+      "route": {
+        "subgraph": "media_graph"
+      },
+      "slots": {
+        "frequency": {
+          "type": "string",
+          "description": "频率，如 87.6、101.1"
+        },
+        "station_name": {
+          "type": "string",
+          "description": "电台名称"
+        }
+      },
+      "examples": [
+        "打开 FM 87.6。",
+        "放一下新闻频道电台。"
+      ],
+      "safety": {
+        "needs_safety_review": false,
+        "tags": []
+      }
+    },
+    "media_play_podcast": {
+      "domain": "infotainment",
+      "action_type": "control",
+      "description": "播客/有声书相关播放",
+      "route": {
+        "subgraph": "media_graph"
+      },
+      "slots": {
+        "podcast_name": {
+          "type": "string",
+          "description": "播客或专辑名称"
+        }
+      },
+      "examples": [
+        "放一个段子来的播客。",
+        "继续播放上次的有声书。"
+      ],
+      "safety": {
+        "needs_safety_review": false,
+        "tags": []
+      }
+    },
+    "media_play_source": {
+      "domain": "infotainment",
+      "action_type": "control",
+      "description": "切换音源（蓝牙、USB、本地等）",
+      "route": {
+        "subgraph": "media_graph"
+      },
+      "slots": {
+        "source": {
+          "type": "string",
+          "description": "蓝牙、本地音乐、USB、在线音乐等"
+        }
+      },
+      "examples": [
+        "放我手机里的歌。",
+        "切到蓝牙音频。"
+      ],
+      "safety": {
+        "needs_safety_review": false,
+        "tags": []
+      }
+    },
+    "media_control": {
+      "domain": "infotainment",
+      "action_type": "control",
+      "description": "通用媒体控制：暂停、播放、上一首、下一首、音量等",
+      "route": {
+        "subgraph": "media_graph"
+      },
+      "slots": {
+        "operation": {
+          "type": "string",
+          "description": "play/pause/next/previous/stop"
+        },
+        "volume_delta": {
+          "type": "number",
+          "description": "音量增减"
+        },
+        "volume_absolute": {
+          "type": "number",
+          "description": "绝对音量值 0-100"
+        }
+      },
+      "examples": [
+        "暂停一下。",
+        "下一首。",
+        "声音小一点。"
+      ],
+      "safety": {
+        "needs_safety_review": false,
+        "tags": []
+      }
+    },
+
+    "chitchat_general": {
+      "domain": "chitchat",
+      "action_type": "query",
+      "description": "闲聊、聊天对话，不涉及车控/导航等",
+      "route": {
+        "subgraph": "chitchat_graph"
+      },
+      "slots": {},
+      "examples": [
+        "讲个笑话。",
+        "你觉得今天心情怎么样？"
+      ],
+      "safety": {
+        "needs_safety_review": true,
+        "tags": ["driving_sensitive"]
+      }
+    },
+    "chitchat_qa": {
+      "domain": "chitchat",
+      "action_type": "query",
+      "description": "与车无关的知识问答",
+      "route": {
+        "subgraph": "chitchat_graph"
+      },
+      "slots": {},
+      "examples": [
+        "黑洞是什么？",
+        "月亮为什么会发光？"
+      ],
+      "safety": {
+        "needs_safety_review": true,
+        "tags": ["driving_sensitive"]
+      }
+    },
+    "chitchat_greeting": {
+      "domain": "chitchat",
+      "action_type": "query",
+      "description": "打招呼、问候类",
+      "route": {
+        "subgraph": "chitchat_graph"
+      },
+      "slots": {},
+      "examples": [
+        "你好。",
+        "早上好。"
+      ],
+      "safety": {
+        "needs_safety_review": false,
+        "tags": []
+      }
+    },
+    "chitchat_thanks": {
+      "domain": "chitchat",
+      "action_type": "query",
+      "description": "致谢、结束对话类",
+      "route": {
+        "subgraph": "chitchat_graph"
+      },
+      "slots": {},
+      "examples": [
+        "谢谢你。",
+        "先这样吧。"
+      ],
+      "safety": {
+        "needs_safety_review": false,
+        "tags": []
+      }
+    },
+
+    "system_help": {
+      "domain": "system",
+      "action_type": "query",
+      "description": "询问助手能力、用法说明",
+      "route": {
+        "subgraph": "system_graph"
+      },
+      "slots": {},
+      "examples": [
+        "你能帮我做什么？",
+        "怎么用你控制空调？"
+      ],
+      "safety": {
+        "needs_safety_review": false,
+        "tags": []
+      }
+    },
+    "system_settings_tts": {
+      "domain": "system",
+      "action_type": "control",
+      "description": "语音播报相关设置，如音量、语速、说话风格等",
+      "route": {
+        "subgraph": "system_graph"
+      },
+      "slots": {
+        "volume_delta": {
+          "type": "number",
+          "description": "播报音量变化"
+        },
+        "speed": {
+          "type": "string",
+          "description": "语速：快/慢/正常"
+        },
+        "style": {
+          "type": "string",
+          "description": "风格：正式/轻松/简洁等"
+        }
+      },
+      "examples": [
+        "说话声音小一点。",
+        "你可以说慢一点吗？",
+        "回答简洁一点。"
+      ],
+      "safety": {
+        "needs_safety_review": false,
+        "tags": []
+      }
+    },
+    "system_settings_mode": {
+      "domain": "system",
+      "action_type": "control",
+      "description": "助手模式切换，例如简洁模式、安全驾驶模式等",
+      "route": {
+        "subgraph": "system_graph"
+      },
+      "slots": {
+        "mode": {
+          "type": "string",
+          "description": "concise/safe_driving/normal 等"
+        }
+      },
+      "examples": [
+        "切换成简洁模式。",
+        "进入安全驾驶模式。"
+      ],
+      "safety": {
+        "needs_safety_review": true,
+        "tags": ["driving_sensitive"]
+      }
+    },
+    "system_settings_privacy": {
+      "domain": "system",
+      "action_type": "control",
+      "description": "隐私相关设置，例如是否记住习惯、行程等",
+      "route": {
+        "subgraph": "system_graph"
+      },
+      "slots": {
+        "remember_habits": {
+          "type": "boolean",
+          "description": "是否记住用户习惯"
+        }
+      },
+      "examples": [
+        "不要记住我的位置。",
+        "别记我的行程记录。"
+      ],
+      "safety": {
+        "needs_safety_review": true,
+        "tags": ["privacy_sensitive"]
+      }
+    },
+
+    "safety_driving_advice": {
+      "domain": "safety",
+      "action_type": "query",
+      "description": "用户主动询问安全建议，例如能否继续行驶",
+      "route": {
+        "subgraph": "safety_guard_graph"
+      },
+      "slots": {
+        "context_issue": {
+          "type": "string",
+          "description": "相关问题，如发动机灯亮、胎压低"
+        }
+      },
+      "examples": [
+        "现在这种情况还能继续开吗？",
+        "这样开安全吗？"
+      ],
+      "safety": {
+        "needs_safety_review": true,
+        "tags": ["safety_critical"]
+      }
+    },
+    "safety_restriction_request": {
+      "domain": "safety",
+      "action_type": "control",
+      "description": "用户要求关闭或绕过安全功能（通常需要拒绝）",
+      "route": {
+        "subgraph": "safety_guard_graph"
+      },
+      "slots": {
+        "system_name": {
+          "type": "string",
+          "description": "要关闭的安全系统，如 安全气囊、碰撞预警、限速提醒"
+        }
+      },
+      "examples": [
+        "帮我关掉安全气囊。",
+        "把超速提醒关了。"
+      ],
+      "safety": {
+        "needs_safety_review": true,
+        "tags": ["safety_critical"]
+      }
+    },
+
+    "generic_fallback": {
+      "domain": "generic",
+      "action_type": "query",
+      "description": "兜底意图，LLM 无法准确分类时使用",
+      "route": {
+        "subgraph": "clarification_graph"
+      },
+      "slots": {},
+      "examples": [
+        "（各种模糊或混合问题）"
+      ],
+      "safety": {
+        "needs_safety_review": true,
+        "tags": []
+      }
+    },
+    "generic_clarify_intent": {
+      "domain": "generic",
+      "action_type": "query",
+      "description": "需要向用户澄清的情况，例如多意图冲突或关键信息缺失",
+      "route": {
+        "subgraph": "clarification_graph"
+      },
+      "slots": {
+        "missing_field": {
+          "type": "string",
+          "description": "缺失的关键信息名称"
+        },
+        "candidate_intents": {
+          "type": "array",
+          "description": "可能的意图候选列表"
+        }
+      },
+      "examples": [
+        "你是想导航到公司，还是设置公司地址？",
+        "需要我帮你开空调，还是只是想问空调怎么用？"
+      ],
+      "safety": {
+        "needs_safety_review": false,
+        "tags": []
+      }
+    }
+  }
+}
