@@ -1,5 +1,6 @@
 import os
 import json
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from tqdm import tqdm
 from pathlib import Path
@@ -109,7 +110,7 @@ USER_PROMPT = dedent("""
     2️⃣ 表达方式多样化（强制）
     - 口语、书面、命令、疑问、吐槽、情绪化混合
     - 新手司机 + 老司机混合
-    - 长句 + 短句混合
+    - 长句 + 中长句 + 短句混合
     - 场景化表达（堵车、夜晚、高速、下雨、出远门、上班、回家、带家人）
 
     3️⃣ 语义合理性
@@ -178,6 +179,34 @@ def gen_data(intent_map, start: int, end: int, total_num: int = 1000) -> str:
     return completion.choices[0].message.content
 
 
+def process_batch(start_idx: int, end_idx: int, intent_map, total_num: int) -> str:
+    """
+    在线程中处理一个 batch：
+    - 调大模型
+    - 解析 JSON
+    - 写出到对应文件
+    返回写出的文件路径，用于日志/调试。
+    """
+    logger.info(f"[线程] 生成第 {start_idx} 条到第 {end_idx} 条的数据")
+
+    samples_str = gen_data(intent_map=intent_map, start=start_idx, end=end_idx, total_num=total_num)
+
+    try:
+        data = json.loads(samples_str)
+    except json.JSONDecodeError as e:
+        logger.error(f"[线程] JSON 解析失败: {e}")
+        logger.error(f"[线程] 原始输出: {samples_str}")
+        # 这里直接抛出，让主线程感知到失败
+        raise
+
+    out_path = os.path.join(OUTPUT_DIR, f"{start_idx}_{end_idx}.json")
+    with open(out_path, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+    logger.info(f"[线程] 已写入文件: {out_path}")
+    return out_path
+
+
 if __name__ == "__main__":
     # 读取意图列表
     if not os.path.exists(INTENT_MAP_PATH):
@@ -187,33 +216,42 @@ if __name__ == "__main__":
         intent_map = json.load(f)
 
     # 生成总数 & 每批数量
-    N = 2000  # 总样本数
+    N = 5000  # 总样本数
     batch = 5  # 每批生成条数
+
+    # 线程数，可通过环境变量控制
+    max_workers = 10
 
     # 确保输出目录存在
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-    logger.info(f"开始生成意图识别数据，总数={N}，步长={batch}")
+    logger.info(f"开始生成意图识别数据，总数={N}，步长={batch}，线程数={max_workers}")
 
-    for i in tqdm(range(0, N, batch), desc="Generating data"):
+    # 预先计算好所有 batch 的区间
+    batches = []
+    for i in range(0, N, batch):
         start_idx = i
         end_idx = min(i + batch, N)
+        batches.append((start_idx, end_idx))
 
-        logger.info(f"生成第 {start_idx} 条到第 {end_idx} 条的数据")
+    # 使用线程池并行生成
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        future_to_batch = {
+            executor.submit(
+                process_batch,
+                start_idx,
+                end_idx,
+                intent_map,
+                N,
+            ): (start_idx, end_idx)
+            for (start_idx, end_idx) in batches
+        }
 
-        samples_str = gen_data(intent_map=intent_map, start=start_idx, end=end_idx, total_num=N)
-
-        # 模型按要求返回一个 JSON 数组字符串，这里先解析校验一下格式
-        try:
-            data = json.loads(samples_str)
-        except json.JSONDecodeError as e:
-            logger.error(f"JSON 解析失败: {e}")
-            logger.error(f"原始输出: {samples_str}")
-            # 如果你希望失败时直接跳过，可以 continue；这里先抛出异常
-            raise
-
-        out_path = os.path.join(OUTPUT_DIR, f"{start_idx}_{end_idx}.json")
-        with open(out_path, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-
-        logger.info(f"已写入文件: {out_path}")
+        # 用 tqdm 包一层进度条
+        for future in tqdm(as_completed(future_to_batch), total=len(future_to_batch), desc="Generating data (multi-thread)"):
+            start_idx, end_idx = future_to_batch[future]
+            try:
+                out_path = future.result()
+                logger.info(f"batch [{start_idx}, {end_idx}] 完成，输出文件: {out_path}")
+            except Exception as e:
+                logger.error(f"batch [{start_idx}, {end_idx}] 失败: {repr(e)}")

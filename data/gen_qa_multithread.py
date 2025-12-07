@@ -5,6 +5,7 @@ import json
 
 from pathlib import Path
 from textwrap import dedent
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from tqdm import tqdm
 from openai import OpenAI
@@ -24,8 +25,6 @@ IMAGES_ROOT = os.path.join(PROJECT_ROOT, "output/mineru_parse")
 
 os.makedirs(QA_DIR, exist_ok=True)
 
-
-
 SYSTEM_PROMPT = dedent("""
 你是一名专业的汽车技术文档专家和多模态助手，负责根据《小米 SU7 用户手册》的各个小节生成用于检索问答系统的问答对（Q&A）。
 
@@ -35,13 +34,13 @@ SYSTEM_PROMPT = dedent("""
 3. **禁止输出空行、注释、说明文字、前后缀、标签、提示语**。只能输出 JSON 内容本身。
 4. JSON 数组格式示例（注意：你不能输出示例，只能输出正式内容）：
    [
-        {{
+        {
         "question": "...",
         "answer": "...",
         "source_title": "...",
         "source_type": "manual_chunk",
         "language": "zh-CN"
-        }}
+        }
    ]
 5. 所有 JSON 字段必须符合以下结构：
    - "question"：问题
@@ -56,14 +55,17 @@ SYSTEM_PROMPT = dedent("""
 【内容要求】
 1. 所有问答必须完全基于传入的小节 Markdown 文本和图片，不允许使用外部知识。
 2. 既要包含基础操作类问题（如「如何…？」、「什么是…？」），也要包含注意事项、安全提示、流程步骤类问题。
-3. 禁止使用“如图所示”、“参见图片”、“见上图”等表述，不得提及图片文件名；如需引用图片信息，应直接描述。
-4. 答案必须自然、口语化但专业准确；涉及操作时优先使用步骤描述。
-5. 问题之间不能重复或高度相似。
+3. 当问题或答案中引用了来自图片的信息时，必须在文本中明确写出对应图片的文件名或相对路径，例如：
+   - “…如图片 images/xxx.png 所示…”
+   - “…详见 images/xxx/yyy.jpg 中标注的按键…”
+   不要只说“如图所示”、“见上图”等泛化表述，而是要把图片路径一并写出来。
+4. 答案必须自然、口语化但专业准确；涉及操作时优先使用步骤描述（例如 1、2、3…）。
+5. 问题之间不能重复或高度相似，应覆盖不同的知识点或使用场景。
 
 【绝对禁止】
 - 输出 markdown 代码块（例如 ```json）
 - 输出除 JSON 外的任何文字
-- 输出多余的包装结构，如 {{"result": [...]}}
+- 输出多余的包装结构，如 {"result": [...]}
 - 输出解释说明
 - 在 JSON 前后添加反引号、缩进提示或前缀后缀
 
@@ -104,7 +106,6 @@ def guess_mime_type(path: Path) -> str:
         return "image/webp"
     if suffix == ".gif":
         return "image/gif"
-    # 兜底
     return "image/jpeg"
 
 
@@ -116,11 +117,6 @@ def image_file_to_data_url(path: Path) -> str:
 
 
 def extract_image_paths_from_markdown(chunk_text: str) -> list[Path]:
-    """
-    从 markdown 文本中提取 images/xxx 形式的相对路径，
-    并转换为绝对 Path（基于 IMAGES_ROOT）。
-    """
-    # 匹配形如 (images/xxx.png) 的链接内容
     matches = re.findall(r"\((images/[^)\s]+)\)", chunk_text)
     image_paths: list[Path] = []
     for rel_path in matches:
@@ -130,7 +126,6 @@ def extract_image_paths_from_markdown(chunk_text: str) -> list[Path]:
 
 
 def build_messages(chunk_title: str, chunk_text: str):
-    # 1. 先把所有图片转成 image_url
     image_paths = extract_image_paths_from_markdown(chunk_text)
     image_contents = []
 
@@ -149,7 +144,6 @@ def build_messages(chunk_title: str, chunk_text: str):
             "image_url": {"url": data_url},
         })
 
-    # 2. user 文本 prompt
     user_text = USER_PROMPT.format(
         chunk_title=chunk_title,
         chunk_text=chunk_text,
@@ -169,7 +163,6 @@ def build_messages(chunk_title: str, chunk_text: str):
 
 
 def gen_data(chunk_title: str, chunk_text: str) -> str:
-
     messages = build_messages(chunk_title, chunk_text)
 
     completion = client.chat.completions.create(
@@ -186,18 +179,54 @@ def gen_data(chunk_title: str, chunk_text: str) -> str:
     if isinstance(content, str):
         return content.strip()
 
-    # 兼容部分模型可能返回 content 为对象数组的情况
     try:
-        # 如果是多 part 内容，拼成字符串
         return "".join(part.get("text", "") for part in content).strip()
     except Exception:
         return str(content).strip()
 
 
+def process_single_chunk(chunk: str):
+    chunk_path = os.path.join(CHUNKS_DIR, chunk)
 
-# ---------------- 主流程 ----------------
+    try:
+        with open(chunk_path, "r", encoding="utf-8") as f:
+            chunk_text = f.read()
+    except Exception as e:
+        logger.exception(f"读取 chunk 失败: {chunk_path}, error: {e}")
+        return
 
-def process_all_chunks():
+    if len(chunk_text) < 10:
+        return
+
+    try:
+        chunk_title = re.split(r"[_.]", chunk)[1]
+    except Exception:
+        chunk_title = chunk
+
+    try:
+        logger.info(f"正在生成: 【{chunk}】 QA 对...")
+        qa_json_str = gen_data(chunk_title, chunk_text)
+    except Exception as e:
+        logger.exception(f"生成 QA 失败: {chunk_path}, error: {e}")
+        return
+
+    try:
+        data = json.loads(qa_json_str)
+        if not isinstance(data, list):
+            logger.warning(f"返回的 JSON 不是数组，文件: {chunk}")
+    except json.JSONDecodeError:
+        logger.warning(f"模型返回的内容不是合法 JSON，原样写入: {chunk}")
+
+    out_path = os.path.join(QA_DIR, f"{chunk}.qa.json")
+    try:
+        with open(out_path, "w", encoding="utf-8") as fw:
+            fw.write(qa_json_str)
+        logger.info(f"已生成 QA: {out_path}")
+    except Exception as e:
+        logger.exception(f"写入 QA 文件失败: {out_path}, error: {e}")
+
+
+def process_all_chunks(max_workers: int | None = None):
     if not os.path.isdir(CHUNKS_DIR):
         raise FileNotFoundError(f"chunks 目录不存在: {CHUNKS_DIR}")
 
@@ -206,42 +235,32 @@ def process_all_chunks():
         if os.path.isfile(os.path.join(CHUNKS_DIR, f))
     )
 
-    logger.info(f"共发现 {len(all_chunks)} 个 chunk 文件，开始生成 QA …")
+    if not all_chunks:
+        logger.warning("未找到任何 chunk 文件")
+        return
 
-    for chunk in tqdm(all_chunks, desc="Generating QA for chunks"):
-        if chunk != "011_遥控钥匙.md":
-            continue
-        chunk_path = os.path.join(CHUNKS_DIR, chunk)
+    logger.info(f"共发现 {len(all_chunks)} 个 chunk 文件，开始并发生成 QA …")
 
-        with open(chunk_path, "r", encoding="utf-8") as f:
-            chunk_text = f.read()
+    if max_workers is None:
+        cpu_cnt = os.cpu_count() or 4
+        max_workers = min(8, cpu_cnt)
 
-        if len(chunk_text) < 5:
-            continue
+    logger.info(f"使用线程数: {max_workers}")
 
-        chunk_title = re.split(r"[_.]", chunk)[1]
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = {
+            executor.submit(process_single_chunk, chunk): chunk
+            for chunk in all_chunks
+        }
 
-        try:
-            logger.info(f"正在生成: 【{chunk}】 QA 对...")
-            qa_json_str = gen_data(chunk_title, chunk_text)
-        except Exception as e:
-            logger.exception(f"生成 QA 失败: {chunk_path}, error: {e}")
-            continue
-
-        # 可选：在这里做一次简单 JSON 校验，防止完全不合法的输出
-        try:
-            data = json.loads(qa_json_str)
-            if not isinstance(data, list):
-                logger.warning(f"返回的 JSON 不是数组，文件: {chunk}")
-        except json.JSONDecodeError:
-            logger.warning(f"模型返回的内容不是合法 JSON，原样写入: {chunk}")
-
-        out_path = os.path.join(QA_DIR, f"{chunk}.qa.json")
-        with open(out_path, "w", encoding="utf-8") as fw:
-            fw.write(qa_json_str)
-
-        logger.info(f"已生成 QA: {out_path}")
+        for future in tqdm(as_completed(futures), total=len(futures), desc="Generating QA for chunks"):
+            try:
+                future.result()
+            except Exception as e:
+                chunk = futures[future]
+                logger.exception(f"处理 chunk 过程中未捕获的异常: {chunk}, error: {e}")
 
 
 if __name__ == "__main__":
-    process_all_chunks()
+    worker = 10
+    process_all_chunks(worker)

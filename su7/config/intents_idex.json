@@ -1,0 +1,342 @@
+{
+  "version": "1.0",
+  "intents": {
+    "manual": {
+      "primary_intent": "manual",
+      "cn_name": "手册 / 说明书相关",
+      "description": "与车辆使用手册、说明书内容相关的查询类意图",
+      "subgraph": "manual_rag",
+      "default_action_type": "query",
+      "children": {
+        "manual_feature_usage": {
+          "secondary_intent": "manual_feature_usage",
+          "cn_name": "功能使用说明",
+          "action_type": "query",
+          "examples": [
+            "怎么用自适应巡航？"
+          ]
+        },
+        "manual_warning_indicator": {
+          "secondary_intent": "manual_warning_indicator",
+          "cn_name": "警示灯含义",
+          "action_type": "query",
+          "examples": [
+            "黄色发动机灯亮了什么意思？"
+          ]
+        },
+        "manual_troubleshooting": {
+          "secondary_intent": "manual_troubleshooting",
+          "cn_name": "故障排查 / 处理",
+          "action_type": "query",
+          "examples": [
+            "窗户关不上了怎么办？"
+          ]
+        },
+        "manual_spec_parameter": {
+          "secondary_intent": "manual_spec_parameter",
+          "cn_name": "规格 / 参数查询",
+          "action_type": "query",
+          "examples": [
+            "这辆车轮胎胎压标准是多少？"
+          ]
+        },
+        "manual_system_explanation": {
+          "secondary_intent": "manual_system_explanation",
+          "cn_name": "系统说明 / 模式解释",
+          "action_type": "query",
+          "examples": [
+            "节能模式和普通模式有什么区别？"
+          ]
+        }
+      }
+    },
+    "vehicle": {
+      "primary_intent": "vehicle",
+      "cn_name": "车辆状态 / 控制",
+      "description": "车辆当前状态查询以及车身各类控制操作",
+      "subgraph": "vehicle_control",
+      "children": {
+        "vehicle_status_query": {
+          "secondary_intent": "vehicle_status_query",
+          "cn_name": "车辆状态查询",
+          "action_type": "query",
+          "examples": [
+            "现在还有多少电？",
+            "车门有没有关好？"
+          ]
+        },
+        "vehicle_control_ac": {
+          "secondary_intent": "vehicle_control_ac",
+          "cn_name": "空调控制",
+          "action_type": "control",
+          "examples": [
+            "把空调调到 22 度",
+            "开大一点风"
+          ]
+        },
+        "vehicle_control_window": {
+          "secondary_intent": "vehicle_control_window",
+          "cn_name": "车窗控制",
+          "action_type": "control",
+          "examples": [
+            "把驾驶位车窗降一点"
+          ]
+        },
+        "vehicle_control_light": {
+          "secondary_intent": "vehicle_control_light",
+          "cn_name": "车灯控制",
+          "action_type": "control",
+          "examples": [
+            "打开近光灯"
+          ]
+        },
+        "vehicle_control_seat": {
+          "secondary_intent": "vehicle_control_seat",
+          "cn_name": "座椅控制",
+          "action_type": "control",
+          "examples": [
+            "帮我加热座椅"
+          ]
+        },
+        "vehicle_control_drive_mode": {
+          "secondary_intent": "vehicle_control_drive_mode",
+          "cn_name": "驾驶模式切换",
+          "action_type": "control",
+          "examples": [
+            "切到运动模式"
+          ]
+        },
+        "vehicle_control_misc": {
+          "secondary_intent": "vehicle_control_misc",
+          "cn_name": "其他车辆控制",
+          "action_type": "control",
+          "examples": [
+            "打开雨刮器",
+            "打开天窗",
+            "打开尾门"
+          ]
+        }
+      }
+    },
+    "navigation": {
+      "primary_intent": "navigation",
+      "cn_name": "导航 / 路线",
+      "description": "目的地设置、沿途 POI 搜索以及路线偏好设置等",
+      "subgraph": "navigation",
+      "default_action_type": "mixed",
+      "children": {
+        "navigation_set_destination": {
+          "secondary_intent": "navigation_set_destination",
+          "cn_name": "设置目的地",
+          "action_type": "control",
+          "examples": [
+            "导航到最近的充电站",
+            "带我去公司"
+          ]
+        },
+        "navigation_add_stop": {
+          "secondary_intent": "navigation_add_stop",
+          "cn_name": "途经点 / 中途加点",
+          "action_type": "control",
+          "examples": [
+            "顺路帮我找个便利店"
+          ]
+        },
+        "navigation_cancel": {
+          "secondary_intent": "navigation_cancel",
+          "cn_name": "取消导航",
+          "action_type": "control",
+          "examples": [
+            "取消导航"
+          ]
+        },
+        "navigation_poi_search": {
+          "secondary_intent": "navigation_poi_search",
+          "cn_name": "POI 搜索",
+          "action_type": "query",
+          "examples": [
+            "附近有什么好吃的火锅？"
+          ]
+        },
+        "navigation_route_preference": {
+          "secondary_intent": "navigation_route_preference",
+          "cn_name": "路线偏好设置",
+          "action_type": "control",
+          "examples": [
+            "不要走高速",
+            "选一条不堵车的路"
+          ]
+        }
+      }
+    },
+    "trip": {
+      "primary_intent": "trip",
+      "cn_name": "行程 / 综合任务",
+      "description": "跨子图的综合任务规划，由 Task Planner 进行拆解和编排",
+      "subgraph": "task_planner",
+      "default_action_type": "plan",
+      "children": {
+        "trip_plan_route_plus_vehicle": {
+          "secondary_intent": "trip_plan_route_plus_vehicle",
+          "cn_name": "行程 + 车辆状态综合规划",
+          "action_type": "plan",
+          "examples": [
+            "明天去杭州旅游，帮我规划路线，还要看看电够不够。"
+          ]
+        },
+        "trip_check_before_drive": {
+          "secondary_intent": "trip_check_before_drive",
+          "cn_name": "出行前车辆检查建议",
+          "action_type": "plan",
+          "examples": [
+            "我要出长途，帮我检查一下车况，需要注意什么？"
+          ]
+        },
+        "trip_charging_plan": {
+          "secondary_intent": "trip_charging_plan",
+          "cn_name": "长途充电规划",
+          "action_type": "plan",
+          "examples": [
+            "从上海到南京，帮我规划一下充电站。"
+          ]
+        }
+      }
+    },
+    "infotainment": {
+      "primary_intent": "infotainment",
+      "cn_name": "娱乐 / 媒体",
+      "description": "车载娱乐系统控制，例如音乐、电台等",
+      "subgraph": "media_agent",
+      "children": {
+        "media_play_music": {
+          "secondary_intent": "media_play_music",
+          "cn_name": "播放音乐",
+          "action_type": "control",
+          "examples": [
+            "放点轻音乐"
+          ]
+        },
+        "media_play_radio": {
+          "secondary_intent": "media_play_radio",
+          "cn_name": "播放电台",
+          "action_type": "control",
+          "examples": [
+            "打开 FM 87.6"
+          ]
+        },
+        "media_play_source": {
+          "secondary_intent": "media_play_source",
+          "cn_name": "切换播放源",
+          "action_type": "control",
+          "examples": [
+            "放我手机里的歌"
+          ]
+        },
+        "media_control": {
+          "secondary_intent": "media_control",
+          "cn_name": "媒体播放控制",
+          "action_type": "control",
+          "examples": [
+            "暂停一下",
+            "下一首"
+          ]
+        }
+      }
+    },
+    "chitchat": {
+      "primary_intent": "chitchat",
+      "cn_name": "闲聊 & QA",
+      "description": "与车辆控制无关的闲聊和通用问答",
+      "subgraph": "llm_chitchat",
+      "children": {
+        "chitchat_general": {
+          "secondary_intent": "chitchat_general",
+          "cn_name": "闲聊对话",
+          "action_type": "llm",
+          "examples": [
+            "讲个笑话",
+            "你是谁？"
+          ]
+        },
+        "chitchat_qa": {
+          "secondary_intent": "chitchat_qa",
+          "cn_name": "通用问答（与车无关）",
+          "action_type": "llm",
+          "examples": [
+            "今天是几号？",
+            "什么是黑洞？"
+          ]
+        }
+      }
+    },
+    "system": {
+      "primary_intent": "system",
+      "cn_name": "系统 / 元指令",
+      "description": "对车载助手自身能力、回答模式、系统设置的控制指令",
+      "subgraph": "system_agent",
+      "children": {
+        "system_help": {
+          "secondary_intent": "system_help",
+          "cn_name": "能力说明 / 帮助",
+          "action_type": "llm",
+          "examples": [
+            "你能帮我做什么？"
+          ]
+        },
+        "system_settings": {
+          "secondary_intent": "system_settings",
+          "cn_name": "系统设置（音量等）",
+          "action_type": "control",
+          "examples": [
+            "说话声音小一点。"
+          ]
+        },
+        "system_mode_switch": {
+          "secondary_intent": "system_mode_switch",
+          "cn_name": "助手回答模式切换",
+          "action_type": "control",
+          "examples": [
+            "切换成简洁模式回答。"
+          ]
+        }
+      }
+    }
+  },
+  "secondary_to_primary": {
+    "manual_feature_usage": "manual",
+    "manual_warning_indicator": "manual",
+    "manual_troubleshooting": "manual",
+    "manual_spec_parameter": "manual",
+    "manual_system_explanation": "manual",
+
+    "vehicle_status_query": "vehicle",
+    "vehicle_control_ac": "vehicle",
+    "vehicle_control_window": "vehicle",
+    "vehicle_control_light": "vehicle",
+    "vehicle_control_seat": "vehicle",
+    "vehicle_control_drive_mode": "vehicle",
+    "vehicle_control_misc": "vehicle",
+
+    "navigation_set_destination": "navigation",
+    "navigation_add_stop": "navigation",
+    "navigation_cancel": "navigation",
+    "navigation_poi_search": "navigation",
+    "navigation_route_preference": "navigation",
+
+    "trip_plan_route_plus_vehicle": "trip",
+    "trip_check_before_drive": "trip",
+    "trip_charging_plan": "trip",
+
+    "media_play_music": "infotainment",
+    "media_play_radio": "infotainment",
+    "media_play_source": "infotainment",
+    "media_control": "infotainment",
+
+    "chitchat_general": "chitchat",
+    "chitchat_qa": "chitchat",
+
+    "system_help": "system",
+    "system_settings": "system",
+    "system_mode_switch": "system"
+  }
+}
