@@ -63,7 +63,7 @@ def image_file_to_data_url(path: str) -> str:
 def build_messages(chunk_title, chunk_text):
     # 1. 先把所有图片转成 image_url
 
-    images_root = os.path.join(PROJECT_ROOT, "output")
+    images_root = os.path.join(PROJECT_ROOT, "output/mineru_parse")
 
     res = re.findall(r"(images/[^\s)]+)", chunk_text)
 
