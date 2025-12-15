@@ -1,5 +1,4 @@
 import os
-import re
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -15,6 +14,7 @@ DEFAULT_CHUNKS_DIR = os.path.join(PROJECT_ROOT, "output", "mineru_parse", "chunk
 
 # ES 相关配置，可通过环境变量覆盖
 DEFAULT_ES_URL = "http://localhost:9200"
+BASIC_AUTH = ("elastic", "QPe9yYcr")
 DEFAULT_ES_INDEX = "su7_manual_es"
 
 
@@ -32,7 +32,10 @@ def clean_markdown(text: str) -> str:
 
 
 def load_chunks(chunks_dir: str) -> List[Dict[str, Any]]:
-    """从 output/mineru_parse/chunks 读取所有 .md chunk。"""
+    """从 output/mineru_parse/chunks 读取所有 .md chunk。
+
+    同时从文件名中解析一个“标题”，用于领域专业词增强（例如 095_挂钩.md → 标题为“挂钩”）。
+    """
     path = Path(chunks_dir)
     if not path.exists():
         raise FileNotFoundError(f"Chunks dir not found: {chunks_dir}")
@@ -43,9 +46,18 @@ def load_chunks(chunks_dir: str) -> List[Dict[str, Any]]:
         content = clean_markdown(raw)
         if not content:
             continue
+
+        stem = file_path.stem
+        # 形如 "095_挂钩" → 取下划线后的部分作为标题
+        if "_" in stem:
+            _, title = stem.split("_", 1)
+        else:
+            title = stem
+
         items.append(
             {
-                "chunk_id": file_path.stem,
+                "chunk_id": stem,
+                "title": title,
                 "content": content,
                 "source": str(file_path),
             }
@@ -55,55 +67,22 @@ def load_chunks(chunks_dir: str) -> List[Dict[str, Any]]:
     return items
 
 
-# ====== 简单分词 & 领域词抽取（用于构造 ES 查询 / 字段） ======
-_TOKEN_PATTERN = re.compile(r"[\u4e00-\u9fff]+|[A-Za-z0-9]+")
-_CHINESE_PATTERN = re.compile(r"[\u4e00-\u9fff]+")
-
-
-def tokenize(text: str) -> List[str]:
-    """把文本切成粗粒度 token（中文连串 / 英文数字串）。"""
-    tokens: List[str] = []
-    for match in _TOKEN_PATTERN.finditer(text):
-        token = match.group(0).strip()
-        if not token:
-            continue
-        tokens.append(token.lower())
-    return tokens
-
-
-def extract_domain_terms(tokens: List[str]) -> List[str]:
-    """从 token 列表中抽取“领域专业词”。
-
-    简单规则：
-    - 中文：连续汉字长度 >= 2
-    - 英文/数字：长度 >= 3
-    """
-    terms: List[str] = []
-    for token in tokens:
-        if _CHINESE_PATTERN.fullmatch(token):
-            if len(token) >= 2:
-                terms.append(token)
-        else:
-            if len(token) >= 3:
-                terms.append(token)
-    return terms
-
-
 # ====== 检索器：基于 Elasticsearch 的关键词 / 领域词召回 ======
 class ESManualKeywordRetriever:
-    """使用 Elasticsearch 对手册 chunks 做关键词 & 领域词召回。"""
+    """使用 Elasticsearch + IK 分词对手册 chunks 做关键词 & 领域专业词召回。"""
 
     def __init__(
         self,
         index_name: str = DEFAULT_ES_INDEX,
         es_url: str = DEFAULT_ES_URL,
+        basic_auth: tuple = BASIC_AUTH
     ) -> None:
         self.index_name = index_name
-        self.client = Elasticsearch(es_url)
+        self.client = Elasticsearch(es_url, basic_auth=basic_auth)
 
     # ---- 索引构建 ----
     def create_index(self, recreate: bool = False) -> None:
-        """创建（或重建）ES 索引，包含 content / domain_terms 等字段。"""
+        """创建（或重建）ES 索引，使用 IK 分词器。"""
         if recreate and self.client.indices.exists(index=self.index_name):
             logger.info("Deleting existing ES index %s", self.index_name)
             self.client.indices.delete(index=self.index_name)
@@ -120,14 +99,16 @@ class ESManualKeywordRetriever:
                 "properties": {
                     "chunk_id": {"type": "keyword"},
                     "source": {"type": "keyword"},
+                     # 从文件名解析出的标题，如“挂钩”“远程控制”，偏领域级专业词
+                    "title": {
+                        "type": "text",
+                        "analyzer": "ik_max_word",
+                        "search_analyzer": "ik_max_word",
+                    },
                     "content": {
                         "type": "text",
-                        "analyzer": "standard",
-                    },
-                    # 将抽取出的领域词列表写入这里，使用 text 提升召回权重
-                    "domain_terms": {
-                        "type": "text",
-                        "analyzer": "standard",
+                        "analyzer": "ik_max_word",
+                        "search_analyzer": "ik_max_word",
                     },
                 }
             },
@@ -142,7 +123,7 @@ class ESManualKeywordRetriever:
         recreate: bool = False,
         batch_size: int = 500,
     ) -> None:
-        """遍历 chunks，写入 ES（包含 content + domain_terms）。"""
+        """遍历 chunks，写入 ES（包含 title + content）。"""
         self.create_index(recreate=recreate)
 
         chunks = load_chunks(chunks_dir)
@@ -154,15 +135,11 @@ class ESManualKeywordRetriever:
 
         actions = []
         for item in chunks:
-            tokens = tokenize(item["content"])
-            domain_terms = extract_domain_terms(tokens)
-
             doc = {
                 "chunk_id": item["chunk_id"],
                 "source": item["source"],
+                "title": item["title"],
                 "content": item["content"],
-                # 作为空格分隔的字符串写入，便于用 match 查询
-                "domain_terms": " ".join(domain_terms),
             }
 
             actions.append(
@@ -185,61 +162,24 @@ class ESManualKeywordRetriever:
 
     # ---- 检索 ----
     def retrieve(self, query: str, top_k: int = 5) -> List[Dict[str, Any]]:
-        """在 ES 中按关键词 / 领域词检索最相关的 chunk。"""
+        """在 ES 中按关键词 / 领域专业词检索最相关的 chunk。"""
         if not query:
             return []
 
-        query_tokens = tokenize(query)
-        query_domain_terms = extract_domain_terms(query_tokens)
-
-        should_clauses: List[Dict[str, Any]] = []
-
-        # 原始 query 在 content 上做全文检索
-        should_clauses.append(
-            {
-                "match": {
-                    "content": {
-                        "query": query,
-                        "boost": 1.0,
-                    }
-                }
-            }
-        )
-
-        # token 合成的查询
-        if query_tokens:
-            should_clauses.append(
-                {
-                    "match": {
-                        "content": {
-                            "query": " ".join(query_tokens),
-                            "boost": 1.2,
-                        }
-                    }
-                }
-            )
-
-        # 领域词单独一个字段，给更高权重
-        if query_domain_terms:
-            should_clauses.append(
-                {
-                    "match": {
-                        "domain_terms": {
-                            "query": " ".join(query_domain_terms),
-                            "boost": 2.0,
-                        }
-                    }
-                }
-            )
-
         body = {
             "query": {
-                "bool": {
-                    "should": should_clauses,
-                    "minimum_should_match": 1,
+                # 把分词、倒排和相关性交给 ES + IK 分词器处理，
+                # 对标题字段（领域词）赋予更高权重。
+                "multi_match": {
+                    "query": query,
+                    "fields": [
+                        "title^3.0",   # 领域专业词（来自文件名）权重更高
+                        "content^1.0",  # 正文内容
+                    ],
+                    "type": "best_fields",
                 }
             },
-            "_source": ["chunk_id", "content", "source"],
+            "_source": ["chunk_id", "title", "content", "source"],
             "size": top_k,
         }
 
@@ -254,6 +194,7 @@ class ESManualKeywordRetriever:
                 {
                     "score": score,
                     "chunk_id": source.get("chunk_id"),
+                    "title": source.get("title"),
                     "content": source.get("content"),
                     "source": source.get("source"),
                 }
@@ -267,7 +208,7 @@ if __name__ == "__main__":
     retriever = ESManualKeywordRetriever()
 
     # 首次使用时可以取消下一行注释，完成索引构建
-    # retriever.build_index_from_chunks(recreate=True)
+    retriever.build_index_from_chunks(recreate=True)
 
     query = "挂钩有什么注意事项"
     hits = retriever.retrieve(query=query, top_k=10)
